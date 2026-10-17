@@ -1,0 +1,19 @@
+{
+  "name": "Lantern Quay",
+  "short_name": "Lantern Quay",
+  "description": "Pull the pins, let the gold fall, restore the loft.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "background_color": "#061119",
+  "theme_color": "#0b1a24",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

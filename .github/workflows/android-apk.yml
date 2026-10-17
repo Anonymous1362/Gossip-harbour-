@@ -1,0 +1,33 @@
+name: Android debug APK (stub)
+
+# STUB -- deliberately not wired up yet. Milestone 5 adds Capacitor, and this job
+# is here so the shape of the pipeline is visible. It does not run on push, and the
+# steps below are commented out because the Android project does not exist yet.
+on:
+  workflow_dispatch:
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Not configured yet
+        run: |
+          echo "Capacitor is not installed. This workflow is a placeholder for Milestone 5."
+          echo "Planned steps:"
+          echo "  1. npm ci"
+          echo "  2. npm run build"
+          echo "  3. npx cap add android  (first run only, then commit the android/ project)"
+          echo "  4. npx cap sync android"
+          echo "  5. ./gradlew assembleDebug in android/"
+          echo "  6. actions/upload-artifact the debug APK"
+      # - uses: actions/setup-java@v4
+      #   with:
+      #     distribution: temurin
+      #     java-version: 21
+      # - run: npm ci && npm run build && npx cap sync android
+      # - run: cd android && ./gradlew assembleDebug
+      # - uses: actions/upload-artifact@v4
+      #   with:
+      #     name: lantern-quay-debug
+      #     path: android/app/build/outputs/apk/debug/*.apk

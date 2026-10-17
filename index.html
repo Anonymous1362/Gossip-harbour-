@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no"
+    />
+    <meta name="theme-color" content="#0b1a24" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>Lantern Quay</title>
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="stage" aria-label="Lantern Quay play field" role="img"></canvas>
+
+      <div id="hud" class="hud" hidden>
+        <div class="level-chip">
+          <span id="level-num">1</span>
+          <span class="level-sep">/</span>
+          <span id="level-total">3</span>
+        </div>
+        <div class="counter" id="counter">
+          <svg class="coin-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="8" cy="8" r="7" fill="#f6b93b" />
+            <circle cx="8" cy="8" r="4.6" fill="none" stroke="#c98a12" stroke-width="1.4" />
+          </svg>
+          <span id="counter-value">0</span>
+        </div>
+        <button id="mute" class="icon-btn" aria-label="Toggle sound" aria-pressed="false">
+          <span id="mute-glyph">♪</span>
+        </button>
+      </div>
+
+      <div id="banner" class="banner" hidden>
+        <p id="banner-text">Pull a pin</p>
+      </div>
+
+      <div id="overlay" class="overlay" hidden>
+        <div class="panel">
+          <h2 id="overlay-title">Restored</h2>
+          <div class="stars" id="stars" aria-hidden="true"></div>
+          <p id="overlay-detail"></p>
+          <div class="actions">
+            <button id="primary" class="btn btn-primary">Next</button>
+            <button id="secondary" class="btn btn-ghost">Retry</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
