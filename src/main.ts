@@ -60,7 +60,7 @@ function clearLevel(): void {
     pins = null;
   }
   if (coins) {
-    stage.scene.remove(coins.mesh);
+    stage.scene.remove(coins.group);
     coins.dispose();
     coins = null;
   }
@@ -81,12 +81,12 @@ function buildLevel(level: LevelDef, index: number, next: Session): void {
   session = next;
 
   hopper = createHopper(level);
-  pins = createPins(level.pins);
+  pins = createPins(level);
   coins = createCoinField();
   jar = createJar(level);
   sparkles = createSparkles();
 
-  stage.scene.add(hopper.group, pins.group, coins.mesh, jar.group, sparkles.points);
+  stage.scene.add(hopper.group, pins.group, coins.group, jar.group, sparkles.points);
 
   lastCollected = 0;
   combo = 0;
@@ -195,10 +195,41 @@ const flow = new LevelFlow(LEVELS, buildLevel);
 requestAnimationFrame(frame);
 
 // Offline support. Skipped in dev so a stale worker never fights HMR.
+//
+// The worker is versioned per build and calls skipWaiting() + clients.claim(), so a
+// deploy takes over on the next visit. The page then reloads once, which is what makes
+// the new index.html (and its hashed asset names) actually load instead of being served
+// from the browser's HTTP cache.
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  const hadController = Boolean(navigator.serviceWorker.controller);
+  let reloading = false;
+
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    // A first install claims an uncontrolled page; only reload when replacing an
+    // existing worker, otherwise the very first visit would reload pointlessly.
+    if (!hadController || reloading) return;
+    reloading = true;
+    window.location.reload();
+  });
+
   window.addEventListener('load', () => {
-    void navigator.serviceWorker.register('./sw.js').catch(() => {
-      // Registration is a bonus; the game runs fine without it.
-    });
+    navigator.serviceWorker
+      .register('./sw.js', { updateViaCache: 'none' })
+      .then((reg) => {
+        // Force a byte-level check instead of trusting the HTTP cache.
+        void reg.update().catch(() => {});
+        reg.waiting?.postMessage({ type: 'SKIP_WAITING' });
+        reg.addEventListener('updatefound', () => {
+          const worker = reg.installing;
+          worker?.addEventListener('statechange', () => {
+            if (worker.state === 'installed' && navigator.serviceWorker.controller) {
+              worker.postMessage({ type: 'SKIP_WAITING' });
+            }
+          });
+        });
+      })
+      .catch(() => {
+        // Registration is a bonus; the game runs fine without it.
+      });
   });
 }

@@ -3,30 +3,56 @@ import type { CoinXf } from '../physics/world.ts';
 import { COIN_R } from '../physics/world.ts';
 import type { LevelDef } from '../game/types.ts';
 import { makeGlowTexture } from './scene.ts';
+import { createCoinMaterials, coinGeometries } from './coinMaterial.ts';
+import type { CoinMaterials } from './coinMaterial.ts';
+import { pileLayout } from './pile.ts';
 
 const MAX_COINS = 250;
 
 export interface CoinField {
-  mesh: THREE.InstancedMesh;
+  group: THREE.Group;
   update(coins: CoinXf[]): void;
   dispose(): void;
 }
 
+/** One instanced disc mesh plus one instanced rim mesh, sharing every transform. */
+function makeCoinInstances(
+  capacity: number,
+  radius: number,
+): {
+  group: THREE.Group;
+  face: THREE.InstancedMesh;
+  rim: THREE.InstancedMesh;
+  mats: CoinMaterials;
+  geos: { face: THREE.BufferGeometry; rim: THREE.BufferGeometry };
+  setMatrix(i: number, m: THREE.Matrix4): void;
+} {
+  const geos = coinGeometries(radius);
+  const mats = createCoinMaterials();
+  const face = new THREE.InstancedMesh(geos.face, mats.face, capacity);
+  const rim = new THREE.InstancedMesh(geos.rim, mats.rim, capacity);
+  for (const mesh of [face, rim]) {
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.frustumCulled = false;
+    mesh.count = 0;
+  }
+  const group = new THREE.Group();
+  group.add(face, rim);
+  return {
+    group,
+    face,
+    rim,
+    mats,
+    geos,
+    setMatrix(i, m) {
+      face.setMatrixAt(i, m);
+      rim.setMatrixAt(i, m);
+    },
+  };
+}
+
 export function createCoinField(): CoinField {
-  // 12 radial segments: ~48 tris per coin, cheap enough for 250 instances.
-  const geo = new THREE.CylinderGeometry(COIN_R, COIN_R, 0.055, 12);
-  geo.rotateX(Math.PI / 2);
-  const mat = new THREE.MeshStandardMaterial({
-    color: '#ffc531',
-    metalness: 0.92,
-    roughness: 0.26,
-    emissive: new THREE.Color('#5a3a00'),
-    emissiveIntensity: 0.55,
-  });
-  const mesh = new THREE.InstancedMesh(geo, mat, MAX_COINS);
-  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  mesh.frustumCulled = false;
-  mesh.count = 0;
+  const inst = makeCoinInstances(MAX_COINS, COIN_R);
 
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();
@@ -35,7 +61,7 @@ export function createCoinField(): CoinField {
   const euler = new THREE.Euler();
 
   return {
-    mesh,
+    group: inst.group,
     update(coins) {
       const n = Math.min(coins.length, MAX_COINS);
       for (let i = 0; i < n; i++) {
@@ -46,14 +72,18 @@ export function createCoinField(): CoinField {
         euler.set(0, 0, c.a);
         q.setFromEuler(euler);
         m.compose(pos, q, scl);
-        mesh.setMatrixAt(i, m);
+        inst.setMatrix(i, m);
       }
-      mesh.count = n;
-      mesh.instanceMatrix.needsUpdate = true;
+      inst.face.count = n;
+      inst.rim.count = n;
+      inst.face.instanceMatrix.needsUpdate = true;
+      inst.rim.instanceMatrix.needsUpdate = true;
     },
     dispose() {
-      geo.dispose();
-      mat.dispose();
+      inst.geos.face.dispose();
+      inst.geos.rim.dispose();
+      inst.mats.face.dispose();
+      inst.mats.rim.dispose();
     },
   };
 }
@@ -70,7 +100,7 @@ export function createJar(level: LevelDef): JarView {
   const group = new THREE.Group();
   group.position.set(x, y, 0.35);
 
-  const glassGeo = new THREE.CylinderGeometry(width / 2, width / 2 * 0.82, height, 22, 1, true);
+  const glassGeo = new THREE.CylinderGeometry(width / 2, (width / 2) * 0.82, height, 22, 1, true);
   const glassMat = new THREE.MeshPhysicalMaterial({
     color: '#cfe9ff',
     roughness: 0.08,
@@ -85,7 +115,7 @@ export function createJar(level: LevelDef): JarView {
   glass.position.y = -height / 2;
   group.add(glass);
 
-  const baseGeo = new THREE.CylinderGeometry(width / 2 * 0.82, width / 2 * 0.82, 0.06, 22);
+  const baseGeo = new THREE.CylinderGeometry((width / 2) * 0.82, (width / 2) * 0.82, 0.06, 22);
   const base = new THREE.Mesh(baseGeo, glassMat);
   base.position.y = -height;
   group.add(base);
@@ -103,35 +133,12 @@ export function createJar(level: LevelDef): JarView {
   group.add(rim);
 
   // --- the pile -------------------------------------------------------------
-  const slots: THREE.Vector3[] = [];
-  const spanX = width - 0.36;
-  const spanZ = 0.9;
-  for (let row = 0; row < 7; row++) {
-    for (let iz = 0; iz < 3; iz++) {
-      for (let ix = 0; ix < 4; ix++) {
-        slots.push(
-          new THREE.Vector3(
-            -spanX / 2 + ix * (spanX / 3),
-            -height + 0.16 + row * 0.24,
-            -spanZ / 2 + iz * (spanZ / 2),
-          ),
-        );
-      }
-    }
-  }
-  const filled = slots.length;
-  const pileGeo = new THREE.CylinderGeometry(COIN_R, COIN_R, 0.05, 10);
-  pileGeo.rotateX(Math.PI / 2);
-  const pileMat = new THREE.MeshStandardMaterial({
-    color: '#ffc531',
-    metalness: 0.9,
-    roughness: 0.3,
-    emissive: new THREE.Color('#7a4c00'),
-    emissiveIntensity: 0.5,
-  });
-  const pile = new THREE.InstancedMesh(pileGeo, pileMat, filled);
-  pile.count = 0;
-  group.add(pile);
+  // The collider's usable width is the authored width (the walls sit outside it), so
+  // the heap is laid out against that, not against the old narrowed interior.
+  const slots = pileLayout(width, height);
+  const inst = makeCoinInstances(Math.max(slots.length, 1), COIN_R);
+  inst.group.position.z = 0.02;
+  group.add(inst.group);
 
   const glowTex = makeGlowTexture('rgba(255,226,150,1)', 'rgba(255,170,40,0)');
   const glowMat = new THREE.SpriteMaterial({
@@ -150,31 +157,37 @@ export function createJar(level: LevelDef): JarView {
   const q = new THREE.Quaternion();
   const s = new THREE.Vector3(1, 1, 1);
   const e = new THREE.Euler();
+  const p = new THREE.Vector3();
 
   return {
     group,
     setFill(collected, total) {
       const ratio = total > 0 ? collected / total : 0;
-      const n = Math.min(filled, Math.round(ratio * filled * 1.15));
+      const n = Math.min(slots.length, Math.round(ratio * slots.length));
       for (let i = 0; i < n; i++) {
-        const p = slots[i];
-        e.set(0, 0, (i % 5) * 0.4);
+        const c = slots[i];
+        p.set(c.x, c.y, c.z);
+        e.set(c.tiltX, c.tiltY, c.a);
         q.setFromEuler(e);
         m.compose(p, q, s);
-        pile.setMatrixAt(i, m);
+        inst.setMatrix(i, m);
       }
-      pile.count = n;
-      pile.instanceMatrix.needsUpdate = true;
+      inst.face.count = n;
+      inst.rim.count = n;
+      inst.face.instanceMatrix.needsUpdate = true;
+      inst.rim.instanceMatrix.needsUpdate = true;
       glowMat.opacity = Math.min(0.85, ratio * 1.1);
     },
     dispose() {
       glassGeo.dispose();
       baseGeo.dispose();
       rimGeo.dispose();
-      pileGeo.dispose();
       glassMat.dispose();
       rimMat.dispose();
-      pileMat.dispose();
+      inst.geos.face.dispose();
+      inst.geos.rim.dispose();
+      inst.mats.face.dispose();
+      inst.mats.rim.dispose();
       glowMat.dispose();
       glowTex.dispose();
     },

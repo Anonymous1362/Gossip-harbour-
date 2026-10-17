@@ -1,5 +1,6 @@
 import Matter from 'matter-js';
 import type { LevelDef, PinDef } from '../game/types.ts';
+import { pinRod } from '../game/pinGeometry.ts';
 import { HOPPER_WALL_T, profileToWalls, radiusAt } from './profile.ts';
 
 const { Engine, Bodies, Body, Composite, Events, Vector } = Matter;
@@ -24,6 +25,26 @@ const MAX_SUBSTEPS = 5;
 /** Velocity clamp in px per step, applied after every substep. */
 const MAX_SPEED = 28;
 const FLOOR_Y = -8.6;
+/** Jar wall thickness in quay units. Thin, because the wall is centred outside the
+ *  inner face: the old 0.07 walls ate 0.14 out of the jar's usable width. */
+const JAR_WALL_T = 0.045;
+
+/** Deterministic PRNG so a level looks the same every run and the play-test is stable. */
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function seedFrom(text: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
+  return h >>> 0;
+}
 
 export interface CoinXf {
   x: number;
@@ -56,6 +77,8 @@ export class PhysicsWorld {
   private jarRight: number;
   private jarTop: number;
   private jarBottom: number;
+  private jarInner: number;
+  private rand: () => number;
 
   constructor(level: LevelDef) {
     this.level = level;
@@ -71,6 +94,8 @@ export class PhysicsWorld {
     this.jarRight = (jarX + jarW / 2) * PX;
     this.jarTop = jarY * PX;
     this.jarBottom = (jarY - jarH) * PX;
+    this.jarInner = this.jarRight - this.jarLeft;
+    this.rand = mulberry32(seedFrom(level.id));
 
     this.buildStatics();
     this.buildJar();
@@ -141,20 +166,22 @@ export class PhysicsWorld {
   }
 
   private buildJar(): void {
-    const t = 0.07 * PX;
-    const h = (this.jarTop - this.jarBottom) / PX;
-    const w = (this.jarRight - this.jarLeft) / PX;
+    const t = JAR_WALL_T * PX;
+    const h = this.jarTop - this.jarBottom;
     const midX = (this.jarLeft + this.jarRight) / 2;
+    // Wall centres sit *outside* the inner faces, so the usable width is exactly
+    // jar.width. Centring them on the inner faces (the old behaviour) narrowed the
+    // jar by a full wall thickness on each side.
     const bodies = [
-      Bodies.rectangle(this.jarLeft, (this.jarTop - h / 2) * PX, t, h * PX, {
+      Bodies.rectangle(this.jarLeft - t / 2, (this.jarTop + this.jarBottom) / 2, t, h, {
         isStatic: true,
         label: 'jar',
       }),
-      Bodies.rectangle(this.jarRight, (this.jarTop - h / 2) * PX, t, h * PX, {
+      Bodies.rectangle(this.jarRight + t / 2, (this.jarTop + this.jarBottom) / 2, t, h, {
         isStatic: true,
         label: 'jar',
       }),
-      Bodies.rectangle(midX, this.jarBottom - t / 2, w * PX, t, {
+      Bodies.rectangle(midX, this.jarBottom - t / 2, this.jarInner + t * 2, t, {
         isStatic: true,
         label: 'jar',
       }),
@@ -162,16 +189,31 @@ export class PhysicsWorld {
     Composite.add(this.engine.world, bodies);
   }
 
+  /** Width of the jar's collider cavity in pixels; a regression check pins this to
+   *  the authored width so the walls cannot creep inward again. */
+  get jarInnerWidth(): number {
+    return this.jarInner;
+  }
+
   private buildPins(): void {
     for (const pin of this.level.pins) {
       this.pinDefs.set(pin.id, pin);
-      const body = Bodies.rectangle(pin.x * PX, pin.y * PX, pin.length * PX, PIN_COLLIDER_T * PX, {
-        isStatic: true,
-        angle: pin.angle,
-        friction: 0.05,
-        restitution: 0.08,
-        label: `pin:${pin.id}`,
-      });
+      // Same rod the renderer draws: mounted through the shell, with a socket, so the
+      // collider is exactly what the player can see.
+      const rod = pinRod(this.level, pin);
+      const body = Bodies.rectangle(
+        rod.center.x * PX,
+        rod.center.y * PX,
+        rod.length * PX,
+        PIN_COLLIDER_T * PX,
+        {
+          isStatic: true,
+          angle: rod.angle,
+          friction: 0.05,
+          restitution: 0.08,
+          label: `pin:${pin.id}`,
+        },
+      );
       this.pinBodies.set(pin.id, body);
       Composite.add(this.engine.world, body);
     }
@@ -200,11 +242,16 @@ export class PhysicsWorld {
     const count = Math.min(positions.length, this.level.coins);
     for (let i = 0; i < count; i++) {
       const p = positions[i];
+      // Coins are identical circles physically, but a shared spin and friction makes
+      // them pack into visible columns and settle in lockstep. A deterministic PRNG
+      // gives each coin its own angle and a hair of friction variation, so the heap
+      // looks poured rather than stacked -- and the play-test stays reproducible.
       const body = Bodies.circle(p.x * PX, p.y * PX, COIN_R * PX, {
-        friction: 0.05,
-        frictionStatic: 0.12,
-        frictionAir: 0.004,
-        restitution: 0.12,
+        angle: this.rand() * Math.PI * 2,
+        friction: 0.045 + this.rand() * 0.025,
+        frictionStatic: 0.1 + this.rand() * 0.05,
+        frictionAir: 0.004 + this.rand() * 0.0015,
+        restitution: 0.09 + this.rand() * 0.06,
         density: 0.0022,
         // Matter's default slop is 0.05px. Anything larger lets coins overlap and
         // wedge into arches that no pulled pin can break.
