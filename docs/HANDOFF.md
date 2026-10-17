@@ -36,7 +36,7 @@ Run these, all green at the end of M1:
 
 ```
 npm run typecheck     # tsc --noEmit, strict
-npm test              # headless play-test of every level (see below)
+npm test              # headless play-test of every level + regression suite
 npm run build         # vite build -> dist/
 ```
 
@@ -51,10 +51,21 @@ ends the level with stars. Current numbers:
 | 02-two-halves | 72/72 | 100% (needs 85%) | 0% | 5.3 s |
 | 03-narrow-neck | 90/90 | 98% (needs 85%) | 0% | 5.7 s |
 
+`tests/regression.test.ts` guards the first-play bug: the win panel painted over the board
+on load with dead buttons. It asserts that no level resolves before a pin is pulled, that
+the win threshold is always finite and inside (0, 1], that a bowl which spawns no coins
+refuses to start, that every panel shipping `hidden` has a `[hidden]` display guard, that
+the overlay sits above the HUD and takes its own taps, and that Next/Retry mount the right
+level (via `LevelFlow`, exercised against a stub DOM).
+
+The root cause was CSS, not logic: `.overlay { display: grid }` outranks the browser's
+`[hidden] { display: none }`, so the panel was on screen from the first frame with the
+title baked into `index.html`. Anything new that ships `hidden` must not fight that rule.
+
 **Not verified:** no browser was available, so nothing in `src/render/`, `src/ui/` or
-`src/audio/` has been run. Those layers typecheck and bundle, and the dev server serves
-them, but the first real render, the tap-to-pin raycast and all audio are unconfirmed.
-Check those on a phone before trusting Milestone 1.
+`src/audio/` has been rendered or heard. Those layers typecheck, bundle and pass the
+stub-DOM checks, and the dev server serves them, but the first real frame, the tap-to-pin
+raycast and all audio are unconfirmed. Check those on a phone before trusting Milestone 1.
 
 ## Known gaps and deliberate deviations
 
@@ -87,7 +98,8 @@ tsconfig.json               strict, allowImportingTsExtensions (physics runs in 
 src/main.ts                 bootstrap, level lifecycle, rAF loop, input, save/audio wiring
 src/game/types.ts           level schema (quay units, 10x18, y-up)
 src/game/levels.ts          JSON loading + structural validation
-src/game/session.ts         rules: win ratio, star tiers, stall loss
+src/game/session.ts         rules: win ratio, star tiers, stall loss, finish gates
+src/game/flow.ts            level index + retry/next, so progression is testable
 src/physics/profile.ts      cavity profile -> mirrored wall colliders (shared with render)
 src/physics/world.ts        matter world: statics, pins, coins, jar, collection, events
 src/render/scene.ts         renderer, camera fit, lights, glow texture helper
@@ -101,6 +113,7 @@ src/ui/styles.css           theme, safe-area padding, pop animation
 src/save/save.ts            versioned localStorage with try/catch
 src/levels/*.json           level data (pins, profile, jar, target, solution)
 tests/physics.test.ts       headless play-test of all levels + rules layer
+tests/regression.test.ts    on-load overlay bug: finish gates, threshold, CSS, buttons
 public/manifest.webmanifest PWA manifest
 public/sw.js                service worker
 public/icon.svg             app icon

@@ -15,7 +15,13 @@ function toLevel(raw: unknown): LevelDef {
   if (!Array.isArray(lvl.hopper?.profile) || lvl.hopper.profile.length < 2) fail('bad profile');
   if (!Array.isArray(lvl.pins) || lvl.pins.length === 0) fail('no pins');
   if (!lvl.jar || typeof lvl.jar.x !== 'number') fail('bad jar');
-  if (typeof lvl.coins !== 'number' || lvl.coins <= 0) fail('bad coin count');
+  if (typeof lvl.coins !== 'number' || !Number.isFinite(lvl.coins) || lvl.coins <= 0) {
+    fail('bad coin count');
+  }
+  // A target of 0 (or NaN) would make "no gold in the glass" count as a win.
+  if (typeof lvl.target !== 'number' || !Number.isFinite(lvl.target) || lvl.target <= 0 || lvl.target > 1) {
+    fail('target must be a number inside (0, 1]');
+  }
   if (!Array.isArray(lvl.solution) || lvl.solution.length === 0) fail('no solution');
   return lvl;
 }

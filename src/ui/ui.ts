@@ -45,15 +45,22 @@ export function createUI(): UI {
 
   let bannerTimer = 0;
   let primaryHandler: (() => void) | null = null;
+  let secondaryHandler: (() => void) | null = null;
   let muted = false;
 
   hud.hidden = false;
 
-  primary.addEventListener('click', () => primaryHandler?.());
-  secondary.addEventListener('click', () => {
-    overlay.hidden = true;
+  /** One-shot: a button fires once, closes the panel, then the level mounts behind it. */
+  const runAction = (handler: (() => void) | null): void => {
+    if (overlay.hidden) return;
     primaryHandler = null;
-  });
+    secondaryHandler = null;
+    overlay.hidden = true;
+    handler?.();
+  };
+
+  primary.addEventListener('click', () => runAction(primaryHandler));
+  secondary.addEventListener('click', () => runAction(secondaryHandler));
 
   return {
     setLevel(num, total) {
@@ -93,13 +100,10 @@ export function createUI(): UI {
       }
       primary.textContent = o.primary;
       primaryHandler = o.onPrimary;
-      if (o.secondary) {
+      secondaryHandler = o.onSecondary ?? null;
+      if (o.secondary && secondaryHandler) {
         secondary.hidden = false;
         secondary.textContent = o.secondary;
-        secondary.onclick = () => {
-          overlay.hidden = true;
-          o.onSecondary?.();
-        };
       } else {
         secondary.hidden = true;
       }
@@ -108,6 +112,7 @@ export function createUI(): UI {
     hideOverlay() {
       overlay.hidden = true;
       primaryHandler = null;
+      secondaryHandler = null;
     },
     setMuted(next) {
       muted = next;

@@ -3,6 +3,8 @@ import * as THREE from 'three';
 
 import { LEVELS } from './game/levels.ts';
 import { Session } from './game/session.ts';
+import { LevelFlow } from './game/flow.ts';
+import type { LevelDef } from './game/types.ts';
 import { createStage } from './render/scene.ts';
 import { createRoom } from './render/room.ts';
 import { createHopper } from './render/hopper.ts';
@@ -33,7 +35,6 @@ ui.onMute((muted) => {
 const room = createRoom();
 stage.scene.add(room.group);
 
-let levelIndex = 0;
 let session: Session | null = null;
 let hopper: HopperView | null = null;
 let pins: PinsView | null = null;
@@ -75,12 +76,10 @@ function clearLevel(): void {
   }
 }
 
-function startLevel(index: number): void {
+function buildLevel(level: LevelDef, index: number, next: Session): void {
   clearLevel();
-  levelIndex = ((index % LEVELS.length) + LEVELS.length) % LEVELS.length;
-  const level = LEVELS[levelIndex];
+  session = next;
 
-  session = new Session(level);
   hopper = createHopper(level);
   pins = createPins(level.pins);
   coins = createCoinField();
@@ -94,7 +93,7 @@ function startLevel(index: number): void {
   ended = false;
 
   ui.hideOverlay();
-  ui.setLevel(levelIndex + 1, LEVELS.length);
+  ui.setLevel(index + 1, LEVELS.length);
   ui.setCounter(0);
   ui.showBanner(level.hint, 3600);
 }
@@ -129,16 +128,18 @@ function handleEnd(): void {
 
   if (won) {
     sfx.win();
-    save = recordStars(save, session.level.id, stars);
-    const last = levelIndex === LEVELS.length - 1;
+    const level = session.level;
+    save = recordStars(save, level.id, stars);
+    const last = flow.isLast;
     ui.showOverlay({
       title: last ? 'The loft is lit' : 'Restored',
       detail: `${session.collected} of ${session.total} coins in the glass (${ratio}%).`,
       stars,
       primary: last ? 'Play again' : 'Next level',
-      onPrimary: () => startLevel(last ? 0 : levelIndex + 1),
+      // Next wraps back to level 1 after the last one, which is also "Play again".
+      onPrimary: () => flow.next(),
       secondary: 'Retry',
-      onSecondary: () => startLevel(levelIndex),
+      onSecondary: () => flow.retry(),
     });
   } else {
     sfx.lose();
@@ -149,7 +150,7 @@ function handleEnd(): void {
       )}%.`,
       stars: 0,
       primary: 'Retry',
-      onPrimary: () => startLevel(levelIndex),
+      onPrimary: () => flow.retry(),
     });
   }
 }
@@ -171,11 +172,7 @@ function frame(now: number): void {
       const delta = session.collected - lastCollected;
       combo = Math.min(combo + delta, 14);
       for (let i = 0; i < delta; i++) sfx.coin(combo);
-      sparkles.burst(
-        LEVELS[levelIndex].jar.x,
-        LEVELS[levelIndex].jar.y + 0.1,
-        Math.min(4, delta + 1),
-      );
+      sparkles.burst(flow.level.jar.x, flow.level.jar.y + 0.1, Math.min(4, delta + 1));
       ui.setCounter(session.collected);
       lastCollected = session.collected;
       navigator.vibrate?.(6);
@@ -193,7 +190,8 @@ function frame(now: number): void {
 window.addEventListener('resize', () => stage.resize());
 window.addEventListener('orientationchange', () => stage.resize());
 
-startLevel(0);
+// Owns the level index and builds the first session, which also mounts level 1.
+const flow = new LevelFlow(LEVELS, buildLevel);
 requestAnimationFrame(frame);
 
 // Offline support. Skipped in dev so a stale worker never fights HMR.
